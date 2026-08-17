@@ -1,13 +1,22 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../models/transaction_item.dart';
 
 class AddTransactionScreen extends StatefulWidget {
-  const AddTransactionScreen({super.key});
+  final TransactionItem? existing;
+  final List<Map<String, dynamic>> customCategories;
+
+  const AddTransactionScreen({
+    super.key,
+    this.existing,
+    this.customCategories = const [],
+  });
 
   @override
-  State<AddTransactionScreen> createState() =>
-      _AddTransactionScreenState();
+  State<AddTransactionScreen> createState() => _AddTransactionScreenState();
 }
 
 class _AddTransactionScreenState extends State<AddTransactionScreen> {
@@ -22,6 +31,7 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
   String selectedWallet = 'Cash';
 
   DateTime selectedDate = DateTime.now();
+  Uint8List? receiptBytes;
 
   final List<String> expenseCategories = [
     'Food',
@@ -41,21 +51,39 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
     'Others',
   ];
 
-  final List<String> paymentMethods = [
-    'Cash',
-    'Card',
-    'E-wallet',
-  ];
+  final List<String> paymentMethods = ['Cash', 'Card', 'E-wallet'];
 
-  final List<String> wallets = [
-    'Cash',
-    'Maybank',
-    'TnG E-Wallet',
-    'ShopeePay',
-  ];
+  final List<String> wallets = ['Cash', 'Maybank', 'TnG E-Wallet', 'ShopeePay'];
+
+  List<String> get customCategoryNames {
+    return widget.customCategories
+        .map((category) => category['title'] as String)
+        .toList();
+  }
 
   List<String> get currentCategories {
-    return isIncome ? incomeCategories : expenseCategories;
+    if (isIncome) return incomeCategories;
+
+    return [...expenseCategories, ...customCategoryNames];
+  }
+
+  @override
+  void initState() {
+    super.initState();
+
+    final existing = widget.existing;
+
+    if (existing != null) {
+      titleController.text = existing.title;
+      amountController.text = existing.amount.toStringAsFixed(2);
+      isIncome = existing.income;
+      selectedCategory = existing.category;
+      selectedDate = existing.date;
+      receiptBytes = existing.receipt;
+      selectedPaymentMethod = existing.paymentMethod;
+      selectedWallet = existing.wallet;
+      noteController.text = existing.note;
+    }
   }
 
   @override
@@ -93,12 +121,68 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
     }
   }
 
+  Future<void> pickReceipt() async {
+    final source = await showModalBottomSheet<ImageSource>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) {
+        return SafeArea(
+          child: Container(
+            margin: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ListTile(
+                  leading: const Icon(Icons.photo_camera_outlined),
+                  title: const Text('Take Photo'),
+                  onTap: () {
+                    Navigator.pop(sheetContext, ImageSource.camera);
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(Icons.photo_library_outlined),
+                  title: const Text('Choose from Gallery'),
+                  onTap: () {
+                    Navigator.pop(sheetContext, ImageSource.gallery);
+                  },
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+
+    if (source == null) return;
+
+    final picked = await ImagePicker().pickImage(
+      source: source,
+      imageQuality: 80,
+    );
+
+    if (picked == null) return;
+
+    final bytes = await picked.readAsBytes();
+
+    setState(() {
+      receiptBytes = bytes;
+    });
+  }
+
+  void removeReceipt() {
+    setState(() {
+      receiptBytes = null;
+    });
+  }
+
   void saveTransaction() {
     final title = titleController.text.trim();
 
-    final amount = double.tryParse(
-      amountController.text.trim(),
-    );
+    final amount = double.tryParse(amountController.text.trim());
 
     if (title.isEmpty) {
       showMessage('Please enter transaction title.');
@@ -111,65 +195,45 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
     }
 
     final transaction = TransactionItem(
+      id: widget.existing?.id,
       title: title,
       category: selectedCategory,
       amount: amount,
       income: isIncome,
       date: selectedDate,
-
-      // Kalau model TransactionItem kau belum ada field ni,
-      // jangan masukkan dulu.
-      //
-      // paymentMethod: selectedPaymentMethod,
-      // wallet: selectedWallet,
-      // note: noteController.text.trim(),
+      receipt: receiptBytes,
+      paymentMethod: selectedPaymentMethod,
+      wallet: selectedWallet,
+      note: noteController.text.trim(),
     );
 
-    Navigator.pop(
-      context,
-      transaction,
-    );
+    Navigator.pop(context, transaction);
   }
 
   void showMessage(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-      ),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message), showCloseIcon: true));
   }
 
-  InputDecoration inputDecoration({
-    String? hint,
-    Widget? prefixIcon,
-  }) {
+  InputDecoration inputDecoration({String? hint, Widget? prefixIcon}) {
     return InputDecoration(
       hintText: hint,
       prefixIcon: prefixIcon,
       filled: true,
       fillColor: Colors.white,
-      contentPadding: const EdgeInsets.symmetric(
-        horizontal: 18,
-        vertical: 18,
-      ),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 18),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(16),
-        borderSide: const BorderSide(
-          color: Color(0xFFE1D8D5),
-        ),
+        borderSide: const BorderSide(color: Color(0xFFE1D8D5)),
       ),
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(16),
-        borderSide: const BorderSide(
-          color: Color(0xFFE1D8D5),
-        ),
+        borderSide: const BorderSide(color: Color(0xFFE1D8D5)),
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(16),
-        borderSide: const BorderSide(
-          color: Color(0xFF277765),
-          width: 1.5,
-        ),
+        borderSide: const BorderSide(color: Color(0xFF277765), width: 1.5),
       ),
     );
   }
@@ -179,18 +243,12 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
       padding: const EdgeInsets.only(bottom: 8),
       child: Text(
         text,
-        style: const TextStyle(
-          fontSize: 16,
-          fontWeight: FontWeight.w500,
-        ),
+        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
       ),
     );
   }
 
-  Widget transactionTypeButton({
-    required String title,
-    required bool income,
-  }) {
+  Widget transactionTypeButton({required String title, required bool income}) {
     final selected = isIncome == income;
 
     return Expanded(
@@ -198,13 +256,9 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
         onTap: () => changeType(income),
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 200),
-          padding: const EdgeInsets.symmetric(
-            vertical: 15,
-          ),
+          padding: const EdgeInsets.symmetric(vertical: 15),
           decoration: BoxDecoration(
-            color: selected
-                ? const Color(0xFFF8CCCC)
-                : Colors.transparent,
+            color: selected ? const Color(0xFFF8CCCC) : Colors.transparent,
             borderRadius: BorderRadius.circular(30),
           ),
           child: Center(
@@ -212,11 +266,8 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
               title,
               style: TextStyle(
                 fontSize: 17,
-                fontWeight:
-                    selected ? FontWeight.bold : FontWeight.normal,
-                color: selected
-                    ? const Color(0xFF7B3636)
-                    : Colors.black87,
+                fontWeight: selected ? FontWeight.bold : FontWeight.normal,
+                color: selected ? const Color(0xFF7B3636) : Colors.black87,
               ),
             ),
           ),
@@ -235,22 +286,15 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
         elevation: 0,
         centerTitle: true,
         foregroundColor: Colors.black,
-        title: const Text(
-          'Add Transaction',
-          style: TextStyle(
-            fontWeight: FontWeight.w600,
-          ),
+        title: Text(
+          widget.existing != null ? 'Edit Transaction' : 'Add Transaction',
+          style: const TextStyle(fontWeight: FontWeight.w600),
         ),
       ),
 
       body: SafeArea(
         child: SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(
-            24,
-            20,
-            24,
-            40,
-          ),
+          padding: const EdgeInsets.fromLTRB(24, 20, 24, 40),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -260,20 +304,18 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
                 child: Container(
                   width: double.infinity,
                   height: 180,
-                  margin: const EdgeInsets.symmetric(
-                    horizontal: 10,
-                  ),
+                  margin: const EdgeInsets.symmetric(horizontal: 10),
                   decoration: BoxDecoration(
                     color: const Color(0xFFFFF3E7),
                     borderRadius: BorderRadius.circular(26),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withOpacity(0.08),
+                        color: Colors.black.withValues(alpha: 0.08),
                         blurRadius: 30,
                         offset: const Offset(0, 12),
                       ),
                       BoxShadow(
-                        color: const Color(0xFFF2B6B6).withOpacity(0.15),
+                        color: const Color(0xFFF2B6B6).withValues(alpha: 0.15),
                         blurRadius: 25,
                         offset: const Offset(0, 6),
                       ),
@@ -290,8 +332,7 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
                         child: Icon(
                           Icons.auto_awesome,
                           size: 20,
-                          color: const Color(0xFFFFC95A)
-                              .withOpacity(0.8),
+                          color: const Color(0xFFFFC95A).withValues(alpha: 0.8),
                         ),
                       ),
 
@@ -302,8 +343,7 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
                         child: Icon(
                           Icons.auto_awesome,
                           size: 16,
-                          color: const Color(0xFFF4A6B5)
-                              .withOpacity(0.8),
+                          color: const Color(0xFFF4A6B5).withValues(alpha: 0.8),
                         ),
                       ),
 
@@ -346,14 +386,8 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
                 ),
                 child: Row(
                   children: [
-                    transactionTypeButton(
-                      title: 'Expense',
-                      income: false,
-                    ),
-                    transactionTypeButton(
-                      title: 'Income',
-                      income: true,
-                    ),
+                    transactionTypeButton(title: 'Expense', income: false),
+                    transactionTypeButton(title: 'Income', income: true),
                   ],
                 ),
               ),
@@ -367,9 +401,7 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
                 keyboardType: const TextInputType.numberWithOptions(
                   decimal: true,
                 ),
-                decoration: inputDecoration(
-                  hint: '0.00',
-                ),
+                decoration: inputDecoration(hint: '0.00'),
               ),
 
               const SizedBox(height: 22),
@@ -379,9 +411,7 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
               TextField(
                 controller: titleController,
                 decoration: inputDecoration(
-                  hint: isIncome
-                      ? 'e.g. Salary'
-                      : 'e.g. Lunch, Petrol',
+                  hint: isIncome ? 'e.g. Salary' : 'e.g. Lunch, Petrol',
                 ),
               ),
 
@@ -390,22 +420,16 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
               label('Category'),
 
               DropdownButtonFormField<String>(
-                value: selectedCategory,
+                initialValue: selectedCategory,
                 decoration: inputDecoration(
-                  prefixIcon: const Icon(
-                    Icons.category_outlined,
-                  ),
+                  prefixIcon: const Icon(Icons.category_outlined),
                 ),
-                items: currentCategories.map(
-                  (category) {
-                    return DropdownMenuItem(
-                      value: category,
-                      child: Text(
-                        '${categoryEmoji(category)}  $category',
-                      ),
-                    );
-                  },
-                ).toList(),
+                items: currentCategories.map((category) {
+                  return DropdownMenuItem(
+                    value: category,
+                    child: Text('${categoryEmoji(category)}  $category'),
+                  );
+                }).toList(),
                 onChanged: (value) {
                   if (value != null) {
                     setState(() {
@@ -431,9 +455,7 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
                   decoration: BoxDecoration(
                     color: Colors.white,
                     borderRadius: BorderRadius.circular(16),
-                    border: Border.all(
-                      color: const Color(0xFFE1D8D5),
-                    ),
+                    border: Border.all(color: const Color(0xFFE1D8D5)),
                   ),
                   child: Row(
                     children: [
@@ -459,20 +481,13 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
               label('Payment Method'),
 
               DropdownButtonFormField<String>(
-                value: selectedPaymentMethod,
+                initialValue: selectedPaymentMethod,
                 decoration: inputDecoration(
-                  prefixIcon: const Icon(
-                    Icons.payment_outlined,
-                  ),
+                  prefixIcon: const Icon(Icons.payment_outlined),
                 ),
-                items: paymentMethods.map(
-                  (method) {
-                    return DropdownMenuItem(
-                      value: method,
-                      child: Text(method),
-                    );
-                  },
-                ).toList(),
+                items: paymentMethods.map((method) {
+                  return DropdownMenuItem(value: method, child: Text(method));
+                }).toList(),
                 onChanged: (value) {
                   if (value != null) {
                     setState(() {
@@ -487,20 +502,13 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
               label('Wallet'),
 
               DropdownButtonFormField<String>(
-                value: selectedWallet,
+                initialValue: selectedWallet,
                 decoration: inputDecoration(
-                  prefixIcon: const Icon(
-                    Icons.account_balance_wallet_outlined,
-                  ),
+                  prefixIcon: const Icon(Icons.account_balance_wallet_outlined),
                 ),
-                items: wallets.map(
-                  (wallet) {
-                    return DropdownMenuItem(
-                      value: wallet,
-                      child: Text(wallet),
-                    );
-                  },
-                ).toList(),
+                items: wallets.map((wallet) {
+                  return DropdownMenuItem(value: wallet, child: Text(wallet));
+                }).toList(),
                 onChanged: (value) {
                   if (value != null) {
                     setState(() {
@@ -517,10 +525,70 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
               TextField(
                 controller: noteController,
                 maxLines: 4,
-                decoration: inputDecoration(
-                  hint: 'Add a note...',
-                ),
+                decoration: inputDecoration(hint: 'Add a note...'),
               ),
+
+              const SizedBox(height: 22),
+
+              label('Receipt (optional)'),
+
+              if (receiptBytes == null)
+                InkWell(
+                  onTap: pickReceipt,
+                  borderRadius: BorderRadius.circular(16),
+                  child: Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(vertical: 24),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: const Color(0xFFE1D8D5)),
+                    ),
+                    child: const Column(
+                      children: [
+                        Icon(
+                          Icons.receipt_long_outlined,
+                          color: Color(0xFF277765),
+                        ),
+                        SizedBox(height: 8),
+                        Text('Add Receipt Photo'),
+                      ],
+                    ),
+                  ),
+                )
+              else
+                Stack(
+                  children: [
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(16),
+                      child: Image.memory(
+                        receiptBytes!,
+                        width: double.infinity,
+                        height: 180,
+                        fit: BoxFit.cover,
+                      ),
+                    ),
+                    Positioned(
+                      top: 8,
+                      right: 8,
+                      child: GestureDetector(
+                        onTap: removeReceipt,
+                        child: Container(
+                          padding: const EdgeInsets.all(4),
+                          decoration: const BoxDecoration(
+                            color: Colors.black54,
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(
+                            Icons.close,
+                            color: Colors.white,
+                            size: 18,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
 
               const SizedBox(height: 35),
 
@@ -537,9 +605,11 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
                       borderRadius: BorderRadius.circular(30),
                     ),
                   ),
-                  child: const Text(
-                    'Save Transaction',
-                    style: TextStyle(
+                  child: Text(
+                    widget.existing != null
+                        ? 'Update Transaction'
+                        : 'Save Transaction',
+                    style: const TextStyle(
                       fontSize: 17,
                       fontWeight: FontWeight.w500,
                     ),
@@ -556,10 +626,7 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
                   },
                   child: const Text(
                     'Cancel',
-                    style: TextStyle(
-                      color: Colors.black87,
-                      fontSize: 16,
-                    ),
+                    style: TextStyle(color: Colors.black87, fontSize: 16),
                   ),
                 ),
               ),
@@ -603,6 +670,12 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
         return '🎁';
 
       default:
+        for (final custom in widget.customCategories) {
+          if (custom['title'] == category) {
+            return custom['emoji'] as String;
+          }
+        }
+
         return '💸';
     }
   }
